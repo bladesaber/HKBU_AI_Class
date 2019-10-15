@@ -1,0 +1,4 @@
+一个 Expert System 的知识库包含了 元知识和Function
+一般而言 元知识放在 个体的 knowledge representation 中更好， knowledge database 只放推导规则
+1，外界的 raw input 经过特定的知识工程编码后产生 knowledge representation
+2，Function 在代码上就是函数运算，输入 knowledge representation 输出 True or False
