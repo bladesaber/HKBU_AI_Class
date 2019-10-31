@@ -419,9 +419,9 @@ class DeploymentConfig(object):
         The model will be replicated `num_clones` times in each replica.
         If `clone_on_cpu` is True, each clone will placed on CPU.
         If `num_replicas` is 1, the model is deployed via a single process.  In that
-        case `worker_device`, `num_ps_tasks`, and `ps_device` are ignored.
+            case `worker_device`, `num_ps_tasks`, and `ps_device` are ignored.
         If `num_replicas` is greater than 1, then `worker_device` and `ps_device`
-        must specify TensorFlow devices for the `worker` and `ps` jobs and `num_ps_tasks` must be positive.
+            must specify TensorFlow devices for the `worker` and `ps` jobs and `num_ps_tasks` must be positive.
         Args:
           num_clones: Number of model clones to deploy in each replica.
           clone_on_cpu: If True clones would be placed on CPU.

@@ -67,6 +67,9 @@ def get_split(split_name, dataset_dir, file_pattern=None, reader=None):
         labels_to_names=labels_to_names)
 
 # Test
-# dataset = get_split('validation', DATA_DIR)
-# provider = slim.dataset_data_provider.DatasetDataProvider(dataset)
-# [image, label] = provider.get(['image', 'label'])
+if __name__ == '__main__':
+    dataset = get_split('validation', 'D:/DataSet/flower_dataset/')
+    provider = slim.dataset_data_provider.DatasetDataProvider(dataset)
+    [image, label] = provider.get(['image', 'label'])
+
+

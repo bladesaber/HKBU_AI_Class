@@ -153,7 +153,7 @@ def resnet_v1(inputs,
                     net = resnet_utils.conv2d_same(net, 64, 7, stride=2, scope='conv1')
                     net = slim.max_pool2d(net, [3, 3], stride=2, scope='pool1')
 
-                print('begin: output_stride: ',output_stride,' net: ',net)
+                # print('begin: output_stride: ',output_stride,' net: ',net)
                 net = resnet_utils.stack_blocks_dense(net, blocks, output_stride, store_non_strided_activations)
 
                 # Convert end_points_collection into a dictionary of end_points.
@@ -161,7 +161,7 @@ def resnet_v1(inputs,
 
                 if global_pool:
                     # Global average pooling.
-                    net = tf.reduce_mean(net, [1, 2], name='pool5', keep_dims=True)
+                    net = tf.reduce_mean(net, [1, 2], name='pool5', keepdims=True)
                     end_points['global_pool'] = net
 
                 if num_classes:
@@ -207,6 +207,7 @@ def resnet_v1_50(inputs,
                  reuse=None,
                  scope='resnet_v1_50'):
     """ResNet-50 model of [1]. See resnet_v1() for arg and return description."""
+    print('using res v1 50 network')
     depth_func = lambda d: max(int(d * depth_multiplier), min_base_depth)
     blocks = [
         resnet_v1_block('block1', base_depth=depth_func(64), num_units=3, stride=2),
@@ -220,7 +221,8 @@ def resnet_v1_50(inputs,
                      store_non_strided_activations=store_non_strided_activations,
                      reuse=reuse, scope=scope)
 
-image = tf.placeholder(dtype=tf.float32, shape=[None, 224, 224, 3])
-resnet_v1_50(image, num_classes=1000, output_stride=16)
-
 resnet_v1.default_image_size = 224
+
+if __name__ == '__main__':
+    image = tf.placeholder(dtype=tf.float32, shape=[None, 224, 224, 3])
+    resnet_v1_50(image, num_classes=1000, output_stride=16)

@@ -27,3 +27,6 @@ def get_network_fn(name, num_classes, weight_decay=0.0, is_training=False):
         network_fn.default_image_size = func.default_image_size
 
     return network_fn
+
+def test():
+    return Vgg_16.vgg_16

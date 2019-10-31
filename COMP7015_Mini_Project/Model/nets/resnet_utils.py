@@ -175,7 +175,7 @@ def stack_blocks_dense(net, blocks, output_stride=None,
                     # atrous convolution with stride=1 and multiply the atrous rate by the
                     # current unit's stride for use in subsequent layers.
 
-                    print(block.scope, ' current stride: %d rate: %d'%(current_stride, rate),' net: ',net.shape, ' arg: ',unit)
+                    # print(block.scope, ' current stride: %d rate: %d'%(current_stride, rate),' net: ',net.shape, ' arg: ',unit)
                     if output_stride is not None and current_stride == output_stride:
                         net = block.unit_fn(net, rate=rate, **dict(unit, stride=1))
                         rate *= unit.get('stride', 1)

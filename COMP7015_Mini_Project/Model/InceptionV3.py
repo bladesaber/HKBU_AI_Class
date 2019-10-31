@@ -387,6 +387,7 @@ def inception_v3(inputs,
     Raises:
       ValueError: if 'depth_multiplier' is less than or equal to zero.
     """
+    print('using inceprtion v3 network')
     if depth_multiplier <= 0:
         raise ValueError('depth_multiplier is not greater than zero.')
     depth = lambda d: max(int(d * depth_multiplier), min_depth)

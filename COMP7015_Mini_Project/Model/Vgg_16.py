@@ -63,6 +63,7 @@ def vgg_16(inputs,
         or the input to the logits layer (if num_classes is 0 or None).
       end_points: a dict of tensors with intermediate activations.
     """
+    print('using vgg 16 network')
     with tf.variable_scope(scope, 'vgg_16', [inputs], reuse=reuse) as sc:
         end_points_collection = sc.original_name_scope + '_end_points'
         # Collect outputs for conv2d, fully_connected and max_pool2d.

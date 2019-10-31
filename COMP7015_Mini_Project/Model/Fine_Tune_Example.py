@@ -8,6 +8,7 @@ import tensorflow.contrib.slim as slim
 from COMP7015_Mini_Project import Data_Manager
 from COMP7015_Mini_Project.Model.Tool import nets_factory
 from COMP7015_Mini_Project.Model.Tool import preprocessing_factory
+import os
 
 # Where the pre-trained InceptionV3 checkpoint is saved to.
 pretrained_checkpoint_dir = '/tmp/checkpoints'
@@ -16,7 +17,7 @@ pretrained_checkpoint_dir = '/tmp/checkpoints'
 train_dir = '/tmp/flowers-models/inception_v3'
 
 # Where the dataset is saved to.
-dataset_dir = '/tmp/flowers'
+dataset_dir = 'D:/DataSet/flower_dataset/'
 
 num_preprocessing_threads = 4
 split_name = 'train'
@@ -47,12 +48,8 @@ def _get_variables_to_train():
         variables_to_train.extend(variables)
     return variables_to_train
 
-
 def _configure_learning_rate(num_samples_per_epoch, global_step):
     decay_steps = int(num_samples_per_epoch * num_epochs_per_decay / batch_size)
-
-    if sync_replicas:
-        decay_steps /= replicas_to_aggregate
 
     if learning_rate_decay_type == 'exponential':
         return tf.train.exponential_decay(learning_rate,
@@ -76,7 +73,6 @@ def _configure_learning_rate(num_samples_per_epoch, global_step):
     else:
         raise ValueError('learning_rate_decay_type [%s] was not recognized' % learning_rate_decay_type)
 
-
 def _configure_optimizer(learning_rate, optimizer='adam'):
     if optimizer == 'adam':
         optimizer = tf.train.AdamOptimizer(
@@ -97,144 +93,187 @@ def _configure_optimizer(learning_rate, optimizer='adam'):
     return optimizer
 
 
-def main(model_name):
+def get_init_fn(checkpoints_dir, model_name):
+    """Returns a function run by the chief worker to warm-start the training."""
+    checkpoint_exclude_scopes = ["InceptionV1/Logits", "InceptionV1/AuxLogits"]
+
+    exclusions = [scope.strip() for scope in checkpoint_exclude_scopes]
+
+    variables_to_restore = []
+    for var in slim.get_model_variables():
+        for exclusion in exclusions:
+            if var.op.name.startswith(exclusion):
+                break
+        else:
+            variables_to_restore.append(var)
+
+    return slim.assign_from_checkpoint_fn(os.path.join(checkpoints_dir, '%s.ckpt'%model_name), variables_to_restore)
+
+def main(model_name, checkpoints_dir):
     if not dataset_dir:
         raise ValueError('You must supply the dataset directory with --dataset_dir')
 
+    # Create global_step
+    global_step = tf.train.create_global_step()
+
+    # Select the dataset #
+    dataset = Data_Manager.get_split(split_name, dataset_dir, file_pattern=None, reader=None)
+
+    # Select the network #
+    network_fn = nets_factory.get_network_fn(model_name,
+                                             num_classes=(dataset.num_classes - labels_offset),
+                                             weight_decay=weight_decay, is_training=True)
+
+    # Select the preprocessing function #
+    preprocessing_name = model_name
+    image_preprocessing_fn = preprocessing_factory.get_preprocessing(
+        preprocessing_name,
+        is_training=True,
+        use_grayscale=use_grayscale)
+
+    # Create a dataset provider that loads data from the dataset #
+    provider = slim.dataset_data_provider.DatasetDataProvider(
+        dataset,
+        num_readers=num_readers,
+        common_queue_capacity=20 * batch_size,
+        common_queue_min=10 * batch_size)
+
+    [image, label] = provider.get(['image', 'label'])
+    label -= labels_offset
+
+    train_image_size = network_fn.default_image_size
+
+    image = image_preprocessing_fn(image, train_image_size, train_image_size)
+
+    images, labels = tf.train.batch(
+        [image, label],
+        batch_size=batch_size,
+        num_threads=num_preprocessing_threads,
+        capacity=5 * batch_size)
+
+    labels = slim.one_hot_encoding(labels, dataset.num_classes - labels_offset)
+    logits, end_points = network_fn(images)
+
+    entropy_loss = tf.nn.softmax_cross_entropy_with_logits(logits, labels)
+    regularization_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
+    regularization_loss = tf.add_n(regularization_losses, name='regularization_loss')
+    total_loss = entropy_loss + regularization_loss
+
+    learning_rate = _configure_learning_rate(dataset.num_samples, global_step)
+    optimizer = _configure_optimizer(learning_rate)
+
+    # ------------------------------------------------------------------------------------------------
+    # variables_to_train = _get_variables_to_train()
+    #
+    # update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+    # with tf.control_dependencies(update_ops):
+    #     gradients = optimizer.compute_gradients(loss=total_loss, var_list=variables_to_train)
+    #     grad_updates = optimizer.apply_gradients(gradients, global_step=global_step)
+
+    # -----------------------------------------------------------------------------------------------
     tf.logging.set_verbosity(tf.logging.INFO)
-    with tf.Graph().as_default():
+    # Specify the optimizer and create the train op:
+    train_op = slim.learning.create_train_op(total_loss, optimizer, variables_to_train=variables_to_train)
 
-        deploy_config = model_deploy.DeploymentConfig(
-            num_clones=FLAGS.num_clones,
-            clone_on_cpu=FLAGS.clone_on_cpu,
-            replica_id=FLAGS.task,
-            num_replicas=FLAGS.worker_replicas,
-            num_ps_tasks=FLAGS.num_ps_tasks)
+    final_loss = slim.learning.train(
+        train_op,
+        logdir=train_dir,
+        init_fn=get_init_fn(checkpoints_dir, model_name),
+        number_of_steps=2)
 
-        # Create global_step
-        global_step = slim.create_global_step()
+def dataset_test(model_name, image_size):
+    import matplotlib.pyplot as plt
+    import numpy as np
 
-        ######################
-        # Select the dataset #
-        ######################
-        dataset = Data_Manager.get_split(split_name, dataset_dir, file_pattern=None, reader=None)
+    if not dataset_dir:
+        raise ValueError('You must supply the dataset directory with --dataset_dir')
 
-        ######################
-        # Select the network #
-        ######################
-        network_fn = nets_factory.get_network_fn(model_name,
-                                                 num_classes=(dataset.num_classes - labels_offset),
-                                                 weight_decay=weight_decay, is_training=True)
+    # Select the dataset #
+    dataset = Data_Manager.get_split(split_name, dataset_dir, file_pattern=None, reader=None)
 
-        #####################################
-        # Select the preprocessing function #
-        #####################################
-        preprocessing_name = model_name
-        image_preprocessing_fn = preprocessing_factory.get_preprocessing(
-            preprocessing_name,
-            is_training=True,
-            use_grayscale=use_grayscale)
+    # Select the preprocessing function #
+    preprocessing_name = model_name
+    image_preprocessing_fn = preprocessing_factory.get_preprocessing(
+        preprocessing_name,
+        is_training=True,
+        use_grayscale=use_grayscale)
 
-        ##############################################################
-        # Create a dataset provider that loads data from the dataset #
-        ##############################################################
-        with tf.device(deploy_config.inputs_device()):
-            provider = slim.dataset_data_provider.DatasetDataProvider(
-                dataset,
-                num_readers=num_readers,
-                common_queue_capacity=20 * batch_size,
-                common_queue_min=10 * batch_size)
+    # Create a dataset provider that loads data from the dataset #
+    provider = slim.dataset_data_provider.DatasetDataProvider(
+        dataset,
+        num_readers=num_readers,
+        common_queue_capacity=20 * batch_size,
+        common_queue_min=10 * batch_size)
 
-            [image, label] = provider.get(['image', 'label'])
-            label -= labels_offset
+    [image, label] = provider.get(['image', 'label'])
+    label -= labels_offset
 
-            train_image_size = train_image_size or network_fn.default_image_size
+    image = image_preprocessing_fn(image, image_size, image_size)
 
-            image = image_preprocessing_fn(image, train_image_size, train_image_size)
+    images, labels = tf.train.batch(
+        [image, label],
+        batch_size=batch_size,
+        num_threads=num_preprocessing_threads,
+        capacity=5 * batch_size)
 
-            images, labels = tf.train.batch(
-                [image, label],
-                batch_size=batch_size,
-                num_threads=num_preprocessing_threads,
-                capacity=5 * batch_size)
+    with tf.Session() as sess:
+        # writer = tf.summary.FileWriter("D:/HKBU_AI_Classs/COMP7015_Mini_Project/Model/Log/", sess.graph)
 
-            labels = slim.one_hot_encoding(labels, dataset.num_classes - labels_offset)
-            batch_queue = slim.prefetch_queue.prefetch_queue(
-                [images, labels], capacity=2 * deploy_config.num_clones)
+        coord = tf.train.Coordinator()
+        threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
-        ####################
-        # Define the model #
-        ####################
-        def clone_fn(batch_queue):
-            """Allows data parallelism by creating multiple clones of network_fn."""
-            images, labels = batch_queue.dequeue()
-            logits, end_points = network_fn(images)
-            return end_points
+        sess.run(tf.global_variables_initializer())
 
-        clones = model_deploy.create_clones(deploy_config, clone_fn, [batch_queue])
-        first_clone_scope = deploy_config.clone_scope(0)
-        # Gather update_ops from the first clone. These contain, for example,
-        # the updates for the batch_norm variables created by network_fn.
-        update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS, first_clone_scope)
+        imgs, signs = sess.run(fetches=[images, labels])
 
-        #################################
-        # Configure the moving averages #
-        #################################
-        if FLAGS.moving_average_decay:
-            moving_average_variables = slim.get_model_variables()
-            variable_averages = tf.train.ExponentialMovingAverage(
-                FLAGS.moving_average_decay, global_step)
-        else:
-            moving_average_variables, variable_averages = None, None
+        coord.request_stop()
+        coord.join(threads)
 
-        #########################################
-        # Configure the optimization procedure. #
-        #########################################
-        with tf.device(deploy_config.optimizer_device()):
-            learning_rate = _configure_learning_rate(dataset.num_samples, global_step)
-            optimizer = _configure_optimizer(learning_rate)
+    for i in range(len(signs)):
+        print('label %d : ' % i, signs[i])
 
-        if FLAGS.sync_replicas:
-            # If sync_replicas is enabled, the averaging will be done in the chief
-            # queue runner.
-            optimizer = tf.train.SyncReplicasOptimizer(
-                opt=optimizer,
-                replicas_to_aggregate=FLAGS.replicas_to_aggregate,
-                total_num_replicas=FLAGS.worker_replicas,
-                variable_averages=variable_averages,
-                variables_to_average=moving_average_variables)
-        elif FLAGS.moving_average_decay:
-            # Update ops executed locally by trainer.
-            update_ops.append(variable_averages.apply(moving_average_variables))
+        imgs[i] = (imgs[i] - np.min(imgs[i])) / (np.max(imgs[i]) - np.min(imgs[i]))
+        plt.imshow(imgs[i])
+        plt.show()
 
-        # Variables to train.
-        variables_to_train = _get_variables_to_train()
+def model_test(model_name, num_classes):
+    if not dataset_dir:
+        raise ValueError('You must supply the dataset directory with --dataset_dir')
 
-        #  and returns a train_tensor and summary_op
-        total_loss, clones_gradients = model_deploy.optimize_clones(
-            clones,
-            optimizer,
-            var_list=variables_to_train)
+    # Create global_step
+    global_step = tf.train.create_global_step()
 
-        # Create gradient updates.
-        grad_updates = optimizer.apply_gradients(clones_gradients, global_step=global_step)
-        update_ops.append(grad_updates)
+    # Select the network #
+    network_fn = nets_factory.get_network_fn(model_name,
+                                             num_classes=(num_classes - labels_offset),
+                                             weight_decay=weight_decay, is_training=True)
 
-        update_op = tf.group(*update_ops)
-        with tf.control_dependencies([update_op]):
-            train_tensor = tf.identity(total_loss, name='train_op')
+    train_image_size = network_fn.default_image_size
 
-        ###########################
-        # Kicks off the training. #
-        ###########################
-        slim.learning.train(
-            train_tensor,
-            logdir=FLAGS.train_dir,
-            master=FLAGS.master,
-            is_chief=(FLAGS.task == 0),
-            init_fn=_get_init_fn(),
-            number_of_steps=FLAGS.max_number_of_steps,
-            log_every_n_steps=FLAGS.log_every_n_steps,
-            save_summaries_secs=FLAGS.save_summaries_secs,
-            save_interval_secs=FLAGS.save_interval_secs,
-            sync_optimizer=optimizer if FLAGS.sync_replicas else None)
+    images = tf.placeholder(dtype=tf.float32, shape=[32, train_image_size, train_image_size, 3])
+    labels = tf.placeholder(dtype=tf.float32, shape=[32, num_classes])
+
+    logits, end_points = network_fn(images)
+
+    # Print endpoint
+    # for key in end_points:
+    #     print(key, end_points[key])
+
+    entropy_loss = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=labels)
+    regularization_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
+    regularization_loss = tf.add_n(regularization_losses, name='regularization_loss')
+    total_loss = entropy_loss + regularization_loss
+
+    # write the graph
+    # with tf.Session() as sess:
+    #     sess.run(tf.global_variables_initializer())
+    #     writer = tf.summary.FileWriter("D:/HKBU_AI_Classs/COMP7015_Mini_Project/Model/Log/", sess.graph)
+
+    # tensorboard --logdir="log"
+
+if __name__ == '__main__':
+    # main(model_name='vgg_16')
+
+    # model_test('vgg_16', num_classes=1000)
+
+    pass
