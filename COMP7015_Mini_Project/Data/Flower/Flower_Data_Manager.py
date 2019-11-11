@@ -1,6 +1,6 @@
 import os
 import tensorflow as tf
-import COMP7015_Mini_Project.data_utils as data_utils
+import COMP7015_Mini_Project.Data.data_utils as data_utils
 import tensorflow.contrib.slim as slim
 
 _FILE_PATTERN = 'flowers_%s_*.tfrecord'
@@ -13,7 +13,6 @@ _ITEMS_TO_DESCRIPTIONS = {
     'image': 'A color image of varying size.',
     'label': 'A single integer between 0 and 4',
 }
-
 
 def get_split(split_name, dataset_dir, file_pattern=None, reader=None):
     """Gets a dataset tuple with instructions for reading flowers.
@@ -69,7 +68,7 @@ def get_split(split_name, dataset_dir, file_pattern=None, reader=None):
 # Test
 if __name__ == '__main__':
     dataset = get_split('validation', 'D:/DataSet/flower_dataset/')
-    provider = slim.dataset_data_provider.DatasetDataProvider(dataset)
-    [image, label] = provider.get(['image', 'label'])
+    # provider = slim.dataset_data_provider.DatasetDataProvider(dataset)
+    # [image, label] = provider.get(['image', 'label'])
 
 

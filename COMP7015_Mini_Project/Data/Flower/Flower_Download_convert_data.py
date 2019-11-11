@@ -1,7 +1,7 @@
 import math
 import os
 import random
-import COMP7015_Mini_Project.data_utils as dataset_utils
+import COMP7015_Mini_Project.Data.data_utils as dataset_utils
 
 import tensorflow as tf
 

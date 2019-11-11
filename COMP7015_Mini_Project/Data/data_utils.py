@@ -3,6 +3,11 @@ import os
 
 LABELS_FILENAME = 'labels.txt'
 
+def float_feature(values):
+    if not isinstance(values, (tuple, list)):
+        values = [values]
+    tf.train.Feature()
+    return tf.train.Feature(float_list=tf.train.FloatList(value=values))
 
 def int64_feature(values):
     """Returns a TF-Feature of int64s.
@@ -55,7 +60,6 @@ def image_to_tfexample(image_data, image_format, height, width, class_id):
         'image/width': int64_feature(width),
     }))
 
-
 def write_label_file(labels_to_class_names, dataset_dir, filename=LABELS_FILENAME):
     labels_filename = os.path.join(dataset_dir, filename)
     with tf.gfile.Open(labels_filename, 'w') as f:
@@ -66,7 +70,6 @@ def write_label_file(labels_to_class_names, dataset_dir, filename=LABELS_FILENAM
 
 def has_labels(dataset_dir, filename=LABELS_FILENAME):
     return tf.gfile.Exists(os.path.join(dataset_dir, filename))
-
 
 def read_label_file(dataset_dir, filename=LABELS_FILENAME):
     labels_filename = os.path.join(dataset_dir, filename)
